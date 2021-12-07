@@ -76,4 +76,3 @@ if __name__ == '__main__':
     # QrCode().config(data={"width":10,"height":20}).save()
     print(QrCode().detect())
 
-
