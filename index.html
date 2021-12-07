@@ -96,6 +96,7 @@
             background-color: rgba(0, 255, 191,0.5);
             border-radius: 5px;
         }
+
         #qrcode:hover canvas{
             cursor:pointer;
         }
@@ -107,6 +108,21 @@
         #qrcode-text:hover{
             cursor:pointer;
             color:aqua;
+        }
+
+        @media screen and (max-height: 600px) {
+            .body{
+                height:400px;
+            }
+            .container{
+                height:400px;
+            }
+            .form{
+                height:200px;
+            }
+            #qrcode{
+                display: none;
+            }
         }
     </style>
 </head>
