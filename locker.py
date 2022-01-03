@@ -42,7 +42,7 @@ class Locker:
     H       = 1050
     N_Boden = 6
     H_Boden = 20
-    P_Nut   = [-H_Boden]+[60+70*i for i in range(12)]+[60+70*11+40+30*i for i in range(6)]
+    P_Nut   = [-H_Boden]+[60+70*i for i in range(12)]+[60+70*11+40+30*i for i in range(7)]
     H_Tur   = 70 
     N_Tur   = int(H//H_Tur) 
     
@@ -54,19 +54,19 @@ class Locker:
             pkgs
                 status of each packages
         '''
-        self.blocks = ["fobid"]+["empty"]*(len(self.P_Nut)-1)
+        self.blocks = ["fobid"]+["empty"]*(len(self.P_Nut)-2)+["fobid"]
         self.pkgs = []
         getattr(self,f"_{init_mode}_init")()
         if not os.path.exists(self.img_path):
             os.mkdir(self.img_path)
         
         self.admins = {
-            'open_all':uuid.uuid1()
+            'open_all':str(uuid.uuid1())
         }
         for  k,v in self.admins.items():
             self._gen_qr(k,{
                 "operation":"admin",
-                "uuid":str(v)
+                "uuid":v
             })
 
         try:
@@ -75,6 +75,7 @@ class Locker:
         except Exception as e:
             print("Init Pi fail")
             self.has_pi=False
+
     def _init_pi(self):
         import RPi.GPIO as GPIO
         GPIO.setmode(GPIO.BCM)
@@ -101,17 +102,17 @@ class Locker:
             GPIO.setup(v,GPIO.OUT)
         
     def _normal_init(self):
-        self.blocks[-self.N_Boden:] = ["boden"]*self.N_Boden
+        self.blocks[-self.N_Boden-1:-1] = ["boden"]*self.N_Boden
         self.stack_top = 0 
-        self.heap_top  = len(self.blocks)-self.N_Boden
+        self.heap_top  = len(self.blocks)-self.N_Boden-1
 
     def _random_init(self):
-        self.blocks[-int(self.N_Boden//2):] = ["boden"]*int(self.N_Boden//2)
+        self.blocks[-int(self.N_Boden//2)-1:-1] = ["boden"]*int(self.N_Boden//2)
         self.stack_top = 0
-        self.heap_top = len(self.blocks)-int(self.N_Boden//2)
+        self.heap_top = len(self.blocks)-int(self.N_Boden//2)-1
         count = 0
         while count < int(self.N_Boden//2):
-            r = random.randint(0,self.heap_top-1)
+            r = random.randint(1,self.heap_top-1)
             if self.blocks[r] == "boden":
                 continue
             else:
@@ -119,9 +120,9 @@ class Locker:
                 count+=1
 
     def _fixed_init(self):
-        self.blocks[-int(self.N_Boden//2):] = ["boden"]*int(self.N_Boden//2)
+        self.blocks[-int(self.N_Boden//2)-1:-1] = ["boden"]*int(self.N_Boden//2)
         self.stack_top = 0
-        self.heap_top = len(self.blocks)-int(self.N_Boden//2)
+        self.heap_top = len(self.blocks)-int(self.N_Boden//2)-1
         self.blocks[2]="boden"
         self.blocks[5]="boden"
         self.blocks[6]="boden"
@@ -134,11 +135,13 @@ class Locker:
         self.action.append((source,self.heap_top))
 
     def _pop_heap(self):
-        # print(f"pop heap")
-        assert self.heap_top<len(self.blocks),"heap above flow"
+        assert self.heap_top<len(self.blocks)-1,"heap above flow"
         self.blocks[self.heap_top]="empty"
         self.heap_top += 1
         return "boden"
+
+    def _is_heap_empty(self):
+        return self.heap_top==len(self.blocks)-1
 
     def _free_above(self):
         self._push_heap(self.stack_top)
@@ -150,13 +153,12 @@ class Locker:
                 break
     
     def _push(self,height):
-        _nut2turbottom = dict([(i,i+1) for i in range(12)]+[(13,13),(14,14),(15,14),(16,15),(17,15),(18,15)])
-        _nut2turtop = dict([(i,i) for i in range(12)]+[(13,13),(14,13),(15,14),(16,14),(17,14),(18,15)])
+        _nut2turbottom = dict([(i,i+1) for i in range(12)]+[(13,13),(14,14),(15,14),(16,15),(17,15),(18,15),(19,15)])
+        _nut2turtop = dict([(i,i) for i in range(12)]+[(13,13),(14,13),(15,14),(16,14),(17,14),(18,15),(19,15)])
         
         """
             ground the height to the start end end block number
         """
-        # assert all(map(lambda x:not x['status'],self.pkgs)),"all packages should be removed first"
         self.action = []
         turbottom = _nut2turbottom[self.stack_top]
         nutbottom = self.stack_top
@@ -171,9 +173,22 @@ class Locker:
                 self._free_above()
             assert self.blocks[self.stack_top] == "empty","stack top not empty"
             self.blocks[self.stack_top]="occupy"
-        if self.blocks[self.stack_top] != "boden":
-            self.action.append((self.heap_top,self.stack_top))
-            self.blocks[self.stack_top] = self._pop_heap()
+        if self.blocks[self.stack_top] != "boden" and self.blocks[self.stack_top]!="fobid":
+            if self._is_heap_empty():
+                flag = True
+                for i in range(self.stack_top,self.heap_top):
+                    if self.blocks[i] == "boden":
+                        self.blocks[i] = "empty"
+                        self.blocks[self.stack_top] = "boden"
+                        self.action.append((i,self.stack_top))
+                        flag = False
+                        break
+                if flag:
+                    for i in range(self.stack_top,self.heap_top):
+                        self.blocks[i] = "occupy"
+            else:
+                self.action.append((self.heap_top,self.stack_top))
+                self.blocks[self.stack_top] = self._pop_heap()
         turtop = _nut2turtop[self.stack_top]
         nuttop = self.stack_top
         return turtop,turbottom,nuttop,nutbottom
@@ -231,10 +246,14 @@ class Locker:
                 "nut+":nuttop,
                 "nut-":nutbottom
             })
-            print(f"Put nut {self.action[0][0]} to nut {self.action[0][1]}")
+            if len(self.action)>0:
+                print(f"Put nut {self.action[0][0]} to nut {self.action[0][1]}")
+            else:
+                print("No action")
             return self.action
         except Exception as e:
             self.blocks = _blocks
+            print(e)
             print("Push Fail")
 
     def _manage_tur(self,operation):
@@ -250,6 +269,19 @@ class Locker:
                     GPIO.output(self.IO[f'tur{i+1}'],GPIO.LOW)
         else:
             print("No pi")
+        for i in range(len(operation)):
+            print(f"--{i+1:^3}--",end="")
+        print("")
+        for i in operation:
+            tmp = {
+                True:"open",
+                False:"close"
+            }
+            print(f"|{tmp[i]:^6}",end="")
+        print("|")
+        for i in range(len(operation)):
+            print(f"-------",end="")
+        print("")
 
     def _pull(self,uuid,index):
         assert index < len(self.pkgs),"index error"
@@ -257,8 +289,9 @@ class Locker:
         assert self.pkgs[index]['status'] is True,"status error"
         self.pkgs[index]['status']=False
         turs = [False]*self.N_Tur
+        # print(self.pkgs[index])
         for tur in range(self.pkgs[index]['tur-'],self.pkgs[index]['tur+']+1):
-            turs[tur]=True
+            turs[tur-1]=True
         for nut in range(self.pkgs[index]['nut-']+1,self.pkgs[index]['nut+']):
             self.blocks[nut]="empty"
         self._manage_tur(turs)
@@ -275,8 +308,10 @@ class Locker:
 
     def open_all(self):
         print('open_all')
-        self._manage_tur([True]*len(self.N_Tur))
-        pass
+        self._manage_tur([True]*self.N_Tur)
+        for i,block in enumerate(self.blocks):
+            if block == "occupy":
+                self.blocks[i]="empty"
 
     def admin(self,data):
         for k,v in self.admins.items():
@@ -284,35 +319,41 @@ class Locker:
                 getattr(self,k)()
         pass
     
+    def parse_qr(self,img):   
+        if not hasattr(self,'qr_detector'):
+            self.qr_detector=PyzBarDecoder()
+        codeinfo, points, _ = self.qr_detector.detectAndDecode(img)
+        if points is not None:
+            img=cv2.drawContours(img, [np.int32(points)], 0, (0, 255, 0), 4)
+        print(f'{len(codeinfo)}:{codeinfo}')
+        status = False
+        try:
+            data = json.loads(codeinfo)
+            if 'operation' in data:
+                {'push':self.push,
+                'pull':self.pull,
+                'admin':self.admin}[data['operation']](data)
+            status = True
+        except Exception as e:
+            print(e)
+            print(f'Erro Info:{codeinfo}')
+        return img,status
+    
     def __call__(self):
         debug = True
         camera = cv2.VideoCapture(0)
         # detector = cv2.QRCodeDetector()
-        detector = PyzBarDecoder()
         while True:
             ret,frame = camera.read()
-            # gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
             if not hasattr(self,'exe_time') or time.time() > self.exe_time+self.zeit_sleep:
-                codeinfo, points, straight_qrcode = detector.detectAndDecode(frame)
-                if points is not None:
-                    frame=cv2.drawContours(frame, [np.int32(points)], 0, (0, 255, 0), 4)
-                    if debug:
-                        print(f'{len(codeinfo)}:{codeinfo}')
-                    if len(codeinfo) > 2:
-                        try:
-                            data = json.loads(codeinfo)
-                            if 'operation' in data:
-                                {'push':self.push,
-                                'pull':self.pull,
-                                'admin':self.admin}[data['operation']](data)
-                            self.exe_time = time.time()
-                            print(self)
-                        except:
-                            raise Exception(f'Erro Info:{codeinfo}')
+            # gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+                frame,status = self.parse_qr(frame)
+                if status:
+                    self.exe_time = time.time()
+                    print(self)
             cv2.imshow("camera",frame)
             if cv2.waitKey(1) == ord('q'):
                 break
-
 
     def __repr__(self):
         for i in range(len(self.blocks)):
@@ -326,9 +367,27 @@ class Locker:
 
            
 if __name__ == '__main__':
-    # l = Locker(init_mode="fixed")
+    l = Locker(init_mode="random")
+    print(l)
+    l.push({'height':200})
+    print(l)
+    l.push({'height':40})
+    print(l)
+    l.push({'height':70})
     # print(l)
-    # print(l.push({'height':300}))
-    # print(l.push({'height':300}))
-    # print(l.pull({}))
-    Locker(init_mode='normal')()
+    # l.push({'height':40})
+    print(l)
+    l.push({'height':40})
+    print(l)
+    l.push({'height':300})
+    print(l)
+    l.push({'height':40})
+    print(l)
+    l.parse_qr(cv2.imread('img/PKG_0.jpg'))
+    l.parse_qr(cv2.imread('img/PKG_1.jpg'))
+    l.parse_qr(cv2.imread('img/PKG_2.jpg'))
+    l.parse_qr(cv2.imread('img/PKG_3.jpg'))
+    l.parse_qr(cv2.imread('img/PKG_4.jpg'))
+    l.parse_qr(cv2.imread('img/open_all.jpg'))
+    print(l)
+    # Locker(init_mode='normal')()
