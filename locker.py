@@ -76,10 +76,9 @@ class Locker:
             print("Init Pi fail")
             self.has_pi=False
     def _init_pi(self):
-        import GPi.GPIO as GPIO
+        import RPi.GPIO as GPIO
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
-        _ports = [2,]
         self.zeit_offen = 0.5
         self.IO = {
             'tur1':4,
@@ -242,11 +241,11 @@ class Locker:
         assert len(operation) == self.N_Tur,"operation error"
         if self.has_pi:
             import RPi.GPIO as GPIO
-            for i,op in enumerate(self.operation):
+            for i,op in enumerate(operation):
                 if op:
                     GPIO.output(self.IO[f'tur{i+1}'],GPIO.HIGH)
             time.sleep(self.zeit_offen)
-            for i,op in enumerate(self.operation):
+            for i,op in enumerate(operation):
                 if op:
                     GPIO.output(self.IO[f'tur{i+1}'],GPIO.LOW)
         else:
@@ -287,7 +286,7 @@ class Locker:
     
     def __call__(self):
         debug = True
-        camera = cv2.VideoCapture(0,cv2.CAP_DSHOW)
+        camera = cv2.VideoCapture(0)
         # detector = cv2.QRCodeDetector()
         detector = PyzBarDecoder()
         while True:
