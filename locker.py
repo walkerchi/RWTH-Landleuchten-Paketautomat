@@ -213,7 +213,7 @@ class Locker:
             if points is not None:
                 frame=cv2.drawContours(frame, [np.int32(points)], 0, (0, 255, 0), 4)
                 if debug:
-                    print(codeinfo)
+                    print(f'{len(codeinfo)}:{codeinfo}')
                 if not debug and len(codeinfo) > 2:
                     try:
                         data = json.loads(codeinfo)
