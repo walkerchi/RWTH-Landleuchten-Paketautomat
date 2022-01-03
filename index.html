@@ -185,9 +185,7 @@
                 console.log(length)
                 $('#qrcode').empty()
                 $('#qrcode').qrcode({
-                    correctLevel:2,
-                    background:'#ffffff',
-                    foreground:'#000000',
+                    correctLevel : QRCode.CorrectLevel.H,
                     width:150,
                     height:150,
                     text:JSON.stringify({

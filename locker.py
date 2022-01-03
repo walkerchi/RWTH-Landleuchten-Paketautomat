@@ -7,6 +7,7 @@ import json
 import os
 import cv2
 from pyzbar import pyzbar as pyzbar
+
 class PyzBarDecoder:
     def __init__(self):
         pass
@@ -65,6 +66,38 @@ class Locker:
                 "operation":"admin",
                 "uuid":str(v)
             })
+
+        try:
+            self._init_pi()
+            self.has_pi=True
+        except Exception as e:
+            print("Init Pi fail")
+            self.has_pi=False
+    def _init_pi(self):
+        import GPi.GPIO as GPIO
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
+        _ports = [2,]
+        self.zeit_offen = 0.5
+        self.IO = {
+            'tur1':4,
+            'tur2':17,
+            'tur3':27,
+            'tur4':22,
+            'tur5':5,
+            'tur6':6,
+            'tur7':13,
+            'tur8':19,
+            'tur9':26,
+            'tur10':18,
+            'tur11':23,
+            'tur12':24,
+            'tur13':25,
+            'tur14':12,
+            'tur15':16
+        }
+        for v in self.IO.values():
+            GPIO.setup(v,GPIO.OUT)
         
     def _normal_init(self):
         self.blocks[-self.N_Boden:] = ["boden"]*self.N_Boden
@@ -116,11 +149,15 @@ class Locker:
                 break
     
     def _push(self,height):
+        _nut2turbottom = dict([(i,i+1) for i in range(12)]+[(13,13),(14,14),(15,14),(16,15),(17,15),(18,15)])
+        _nut2turtop = dict([(i,i) for i in range(12)]+[(13,13),(14,13),(15,14),(16,14),(17,14),(18,15)])
+        
         """
             ground the height to the start end end block number
         """
         assert all(map(lambda x:not x['stats'],self.pkgs)),"all packages should be removed first"
         self.action = []
+        turbottom = _nut2turbottom[self.stack_top]
         position = self.P_Nut[self.stack_top]+self.H_Boden+height
         for i in range(self.stack_top,self.heap_top):
             self.stack_top+=1
@@ -136,7 +173,8 @@ class Locker:
         if self.blocks[self.stack_top] != "boden":
             self.action.append((self.heap_top,self.stack_top))
             self.blocks[self.stack_top] = self._pop_heap()
-        return self.action
+        turtop = _nut2turtop[self.stack_top]
+        return turtop,turbottom
 
     def _gen_qr(self,name,data):
         qr = qrcode.QRCode(
@@ -162,10 +200,11 @@ class Locker:
             -------
                 {bd_índ:new_nut,bd_ind:new_nut}
         """
+
         print(f"Push {data['height']}mm")
         _blocks = self.blocks.copy()
         try:
-            self._push(data['height'])
+            turtop,turbottom = self._push(data['height'])
             for (u,v) in self.action.copy():
                 for (u_,v_) in self.action.copy():
                     if u==v_:
@@ -183,19 +222,37 @@ class Locker:
             })
             self.pkgs.append({
                 'status':True,
-                'uid':uid
+                'uid':uid,
+                "tur+":turtop,
+                "tur-":turbottom
             })
             return self.action
         except Exception as e:
             self.blocks = _blocks
             print("Push Fail")
 
+    def _manage_tur(self,operation):
+        assert len(operation) == self.N_Tur
+        if self.has_pi:
+            for i,op in enumerate(self.operation):
+                if op:
+                    GPIO.output(self.IO[f'tur{i+1}'],GPIO.HIGH)
+            time.sleep(self.zeit_offen)
+            for i,op in enumerate(self.operation):
+                if op:
+                    GPIO.output(self.IO[f'tur{i+1}'],GPIO.LOW)
+        else:
+            print("No pi")
+
     def _pull(self,uuid,index):
         assert index < len(self.pkgs)
         assert uuid == self.pkgs[index]['uuid']
         assert self.pkgs[index]['status'] is True
         self.pkgs[index]['status']=False
-
+        turs = [False]*len(self.N_Tur)
+        for tur in range(self.pkgs[index]['tur-'],self.pkgs[index]['tur+']+1):
+            turs[tur]=True
+        self._manage_tur(turs)
         
     def pull(self,data):
         print(f"Pull {data['index']}")
@@ -206,6 +263,7 @@ class Locker:
 
     def open_all(self):
         print('open_all')
+        self._manage_tur([True]*len(self.N_Tur))
         pass
 
     def admin(self,data):
