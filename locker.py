@@ -38,12 +38,14 @@ class Locker:
             
     '''
     img_path = './img'
+    zeit_sleep=5
     H       = 1050
     N_Boden = 6
     H_Boden = 20
     P_Nut   = [-H_Boden]+[60+70*i for i in range(12)]+[60+70*11+40+30*i for i in range(6)]
     H_Tur   = 70 
     N_Tur   = int(H//H_Tur) 
+    
 
     def __init__(self,init_mode="normal"):
         '''
@@ -155,13 +157,14 @@ class Locker:
         """
             ground the height to the start end end block number
         """
-        assert all(map(lambda x:not x['stats'],self.pkgs)),"all packages should be removed first"
+        # assert all(map(lambda x:not x['status'],self.pkgs)),"all packages should be removed first"
         self.action = []
         turbottom = _nut2turbottom[self.stack_top]
+        nutbottom = self.stack_top
         position = self.P_Nut[self.stack_top]+self.H_Boden+height
         for i in range(self.stack_top,self.heap_top):
             self.stack_top+=1
-            #print(f"i:{i} st:{self.stack_top} nut:{self.P_Nut[i]}")
+            # print(f"i:{i} st:{self.stack_top} nut:{self.P_Nut[i]}")
             if self.P_Nut[self.stack_top]>position:
                 # self.stack_top -= 1
                 break
@@ -169,12 +172,12 @@ class Locker:
                 self._free_above()
             assert self.blocks[self.stack_top] == "empty","stack top not empty"
             self.blocks[self.stack_top]="occupy"
-
         if self.blocks[self.stack_top] != "boden":
             self.action.append((self.heap_top,self.stack_top))
             self.blocks[self.stack_top] = self._pop_heap()
         turtop = _nut2turtop[self.stack_top]
-        return turtop,turbottom
+        nuttop = self.stack_top
+        return turtop,turbottom,nuttop,nutbottom
 
     def _gen_qr(self,name,data):
         qr = qrcode.QRCode(
@@ -204,7 +207,7 @@ class Locker:
         print(f"Push {data['height']}mm")
         _blocks = self.blocks.copy()
         try:
-            turtop,turbottom = self._push(data['height'])
+            turtop,turbottom,nuttop,nutbottom = self._push(data['height'])
             for (u,v) in self.action.copy():
                 for (u_,v_) in self.action.copy():
                     if u==v_:
@@ -215,25 +218,30 @@ class Locker:
                         self.action.remove((u,v))
                         self.action.remove((u_,v_))
                         self.action.append((u,v_))
-            uid  = uuid.uuid1()
+            uid  = str(uuid.uuid1())
             self._gen_qr(f"PKG_{len(self.pkgs)}",{
                 "operation":"pull",
-                "uuid":str(uid)
+                "uuid":uid,
+                "index":len(self.pkgs)
             })
             self.pkgs.append({
                 'status':True,
-                'uid':uid,
+                'uuid':uid,
                 "tur+":turtop,
-                "tur-":turbottom
+                "tur-":turbottom,
+                "nut+":nuttop,
+                "nut-":nutbottom
             })
+            print(f"Put nut {self.action[0][0]} to nut {self.action[0][1]}")
             return self.action
         except Exception as e:
             self.blocks = _blocks
             print("Push Fail")
 
     def _manage_tur(self,operation):
-        assert len(operation) == self.N_Tur
+        assert len(operation) == self.N_Tur,"operation error"
         if self.has_pi:
+            import RPi.GPIO as GPIO
             for i,op in enumerate(self.operation):
                 if op:
                     GPIO.output(self.IO[f'tur{i+1}'],GPIO.HIGH)
@@ -245,21 +253,26 @@ class Locker:
             print("No pi")
 
     def _pull(self,uuid,index):
-        assert index < len(self.pkgs)
-        assert uuid == self.pkgs[index]['uuid']
-        assert self.pkgs[index]['status'] is True
+        assert index < len(self.pkgs),"index error"
+        assert uuid == self.pkgs[index]['uuid'],"uuid error"
+        assert self.pkgs[index]['status'] is True,"status error"
         self.pkgs[index]['status']=False
-        turs = [False]*len(self.N_Tur)
+        turs = [False]*self.N_Tur
         for tur in range(self.pkgs[index]['tur-'],self.pkgs[index]['tur+']+1):
             turs[tur]=True
+        for nut in range(self.pkgs[index]['nut-']+1,self.pkgs[index]['nut+']):
+            self.blocks[nut]="empty"
         self._manage_tur(turs)
         
     def pull(self,data):
         print(f"Pull {data['index']}")
+        _blocks = self.blocks.copy()
         try:
             self._pull(data['uuid'],data['index'])
         except Exception as e:
+            print(e)
             print("Pull Fail")
+            self.blocks=_blocks
 
     def open_all(self):
         print('open_all')
@@ -274,27 +287,29 @@ class Locker:
     
     def __call__(self):
         debug = True
-        camera = cv2.VideoCapture(0)
+        camera = cv2.VideoCapture(0,cv2.CAP_DSHOW)
         # detector = cv2.QRCodeDetector()
         detector = PyzBarDecoder()
         while True:
             ret,frame = camera.read()
             # gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
-            codeinfo, points, straight_qrcode = detector.detectAndDecode(frame)
-            if points is not None:
-                frame=cv2.drawContours(frame, [np.int32(points)], 0, (0, 255, 0), 4)
-                if debug:
-                    print(f'{len(codeinfo)}:{codeinfo}')
-                if not debug and len(codeinfo) > 2:
-                    try:
-                        data = json.loads(codeinfo)
-                        if 'operation' in data:
-                            {'push':self.push,
-                            'pull':self.pull,
-                            'admin':self.admin}[data['operation']](data)
-                    except:
-                        raise Exception(f'Erro Info:{codeinfo}')
-                    return data
+            if not hasattr(self,'exe_time') or time.time() > self.exe_time+self.zeit_sleep:
+                codeinfo, points, straight_qrcode = detector.detectAndDecode(frame)
+                if points is not None:
+                    frame=cv2.drawContours(frame, [np.int32(points)], 0, (0, 255, 0), 4)
+                    if debug:
+                        print(f'{len(codeinfo)}:{codeinfo}')
+                    if len(codeinfo) > 2:
+                        try:
+                            data = json.loads(codeinfo)
+                            if 'operation' in data:
+                                {'push':self.push,
+                                'pull':self.pull,
+                                'admin':self.admin}[data['operation']](data)
+                            self.exe_time = time.time()
+                            print(self)
+                        except:
+                            raise Exception(f'Erro Info:{codeinfo}')
             cv2.imshow("camera",frame)
             if cv2.waitKey(1) == ord('q'):
                 break
@@ -314,14 +329,7 @@ class Locker:
 if __name__ == '__main__':
     # l = Locker(init_mode="fixed")
     # print(l)
-    # print(l.push(300))
-    # print(l)
-    # print(l.push(200))
-    # print(l)
-    # print(l.push(100))
-    # print(l)
-    # print(l.push(10))
-    # print(l)
-    # print(l.push(200))
-    # print(l)
+    # print(l.push({'height':300}))
+    # print(l.push({'height':300}))
+    # print(l.pull({}))
     Locker(init_mode='normal')()
