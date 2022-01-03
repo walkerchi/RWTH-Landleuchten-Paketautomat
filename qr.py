@@ -68,7 +68,7 @@ class QrCode:
                         raise Exception(f'Erro Info:{codeinfo}')
                     return data
             cv2.imshow("camera",frame)
-            if cv2.waitKey(1) == ord('q'):
+            if cv2.waitKey(1) == ord('q') or cv2.waitKey(1)==27:
                 break
             
 

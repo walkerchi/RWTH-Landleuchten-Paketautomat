@@ -5,6 +5,20 @@ import qrcode
 import uuid
 import json
 import os
+import cv2
+from pyzbar import pyzbar as pyzbar
+class PyzBarDecoder:
+    def __init__(self):
+        pass
+    def detectAndDecode(self,img):
+        barcodes = pyzbar.decode(img)
+        if len(barcodes) == 0:
+            return "",None,None
+        barcode = barcodes[0]
+        (x,y,w,h) = barcode.rect
+        barcodeData = barcode.data.decode("UTF8")
+        return barcodeData,[(x,y),(x+w,y),(x+w,y+h),(x,y+h)],None
+
 class Locker:
     '''
         Constant
@@ -201,11 +215,10 @@ class Locker:
         pass
     
     def __call__(self):
-        import cv2
-        import numpy as np
         debug = True
         camera = cv2.VideoCapture(0)
-        detector = cv2.QRCodeDetector()
+        # detector = cv2.QRCodeDetector()
+        detector = PyzBarDecoder()
         while True:
             ret,frame = camera.read()
             # gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
