@@ -31,10 +31,14 @@ class Locker:
                 height of each boden 
             P_Nut 
                 position of each nuts, including the bottom 
-            H_Tur 
-                height of the door  
             N_Tur 
                 number of the door
+            Nut2TurBottom
+                nut as the bottom the lowest tur should open
+                nut begin with 0(the bottom of locker not the real nut)
+                tur begin with 1
+            Nut2TurTop
+                nut as the top the highest tur should open
             
     '''
     img_path = './img'
@@ -43,8 +47,9 @@ class Locker:
     N_Boden = 6
     H_Boden = 20
     P_Nut   = [-H_Boden]+[60+70*i for i in range(12)]+[60+70*11+40+30*i for i in range(7)]
-    H_Tur   = 70 
-    N_Tur   = int(H//H_Tur) 
+    N_Tur   = 15
+    Nut2TurBottom = dict([(i,i+1) for i in range(12)]+[(13,13),(14,14),(15,14),(16,15),(17,15),(18,15),(19,15)])
+    Nut2TurTop    = dict([(i,i) for i in range(12)]+[(13,13),(14,13),(15,14),(16,14),(17,14),(18,15),(19,15)])
     
 
     def __init__(self,init_mode="normal"):
@@ -153,8 +158,8 @@ class Locker:
                 break
     
     def _push(self,height):
-        _nut2turbottom = dict([(i,i+1) for i in range(12)]+[(13,13),(14,14),(15,14),(16,15),(17,15),(18,15),(19,15)])
-        _nut2turtop = dict([(i,i) for i in range(12)]+[(13,13),(14,13),(15,14),(16,14),(17,14),(18,15),(19,15)])
+        _nut2turbottom = self.Nut2TurBottom
+        _nut2turtop = self.Nut2TurTop
         
         """
             ground the height to the start end end block number
@@ -166,7 +171,7 @@ class Locker:
         for i in range(self.stack_top,self.heap_top):
             self.stack_top+=1
             # print(f"i:{i} st:{self.stack_top} nut:{self.P_Nut[i]}")
-            if self.P_Nut[self.stack_top]>position:
+            if self.P_Nut[self.stack_top]>=position:
                 # self.stack_top -= 1
                 break
             if self.blocks[self.stack_top] == "boden":
@@ -206,6 +211,9 @@ class Locker:
         img.save(os.path.join(self.img_path,f"{name}.jpg"))
         return qr
 
+    def _action_hook(self,action):
+        return action
+
     def push(self,data):
         """
             Put in a package of height `height`, return the strategy placing the boden
@@ -222,6 +230,7 @@ class Locker:
         _blocks = self.blocks.copy()
         try:
             turtop,turbottom,nuttop,nutbottom = self._push(data['height'])
+            self.action = self._action_hook(self.action)
             for (u,v) in self.action.copy():
                 for (u_,v_) in self.action.copy():
                     if u==v_:
@@ -256,19 +265,7 @@ class Locker:
             print(e)
             print("Push Fail")
 
-    def _manage_tur(self,operation):
-        assert len(operation) == self.N_Tur,"operation error"
-        if self.has_pi:
-            import RPi.GPIO as GPIO
-            for i,op in enumerate(operation):
-                if op:
-                    GPIO.output(self.IO[f'tur{i+1}'],GPIO.HIGH)
-            time.sleep(self.zeit_offen)
-            for i,op in enumerate(operation):
-                if op:
-                    GPIO.output(self.IO[f'tur{i+1}'],GPIO.LOW)
-        else:
-            print("No pi")
+    def _print_tur(self,operation):
         for i in range(len(operation)):
             print(f"--{i+1:^3}--",end="")
         print("")
@@ -283,6 +280,38 @@ class Locker:
             print(f"-------",end="")
         print("")
 
+    def _print_nut(self):
+        for i in range(len(self.blocks)):
+            print(f"--{i:^4}--",end="")
+        print("")
+        for b in self.blocks:
+            print(f"| {b:^6}",end="")
+        print("|")
+        print("--------"*len(self.blocks))
+        return ""
+   
+    def _manage_tur(self,operation):
+        '''
+            Parameters
+            ----------
+            operation
+                operation of each tur, if True open the tur.
+                list of boolean [False,False,....,True,True,...], with length [N_Tur]
+        '''
+        assert len(operation) == self.N_Tur,"operation error"
+        if self.has_pi:
+            import RPi.GPIO as GPIO
+            for i,op in enumerate(operation):
+                if op:
+                    GPIO.output(self.IO[f'tur{i+1}'],GPIO.HIGH)
+            time.sleep(self.zeit_offen)
+            for i,op in enumerate(operation):
+                if op:
+                    GPIO.output(self.IO[f'tur{i+1}'],GPIO.LOW)
+        else:
+            print("No pi")
+        self._print_tur(operation)
+       
     def _pull(self,uuid,index):
         assert index < len(self.pkgs),"index error"
         assert uuid == self.pkgs[index]['uuid'],"uuid error"
@@ -325,7 +354,7 @@ class Locker:
         codeinfo, points, _ = self.qr_detector.detectAndDecode(img)
         if points is not None:
             img=cv2.drawContours(img, [np.int32(points)], 0, (0, 255, 0), 4)
-        print(f'{len(codeinfo)}:{codeinfo}')
+        # print(f'{len(codeinfo)}:{codeinfo}')
         status = False
         try:
             data = json.loads(codeinfo)
@@ -335,8 +364,9 @@ class Locker:
                 'admin':self.admin}[data['operation']](data)
             status = True
         except Exception as e:
-            print(e)
-            print(f'Erro Info:{codeinfo}')
+            # print(e)
+            # print(f'Erro Info:{codeinfo}')
+            pass
         return img,status
     
     def __call__(self):
@@ -356,14 +386,7 @@ class Locker:
                 break
 
     def __repr__(self):
-        for i in range(len(self.blocks)):
-            print(f"--{i:^4}--",end="")
-        print("")
-        for b in self.blocks:
-            print(f"| {b:^6}",end="")
-        print("|")
-        print("--------"*len(self.blocks))
-        return ""
+        return self._print_nut()
 
            
 if __name__ == '__main__':
@@ -374,8 +397,6 @@ if __name__ == '__main__':
     l.push({'height':40})
     print(l)
     l.push({'height':70})
-    # print(l)
-    # l.push({'height':40})
     print(l)
     l.push({'height':40})
     print(l)
