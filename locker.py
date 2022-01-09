@@ -354,7 +354,7 @@ class Locker:
         codeinfo, points, _ = self.qr_detector.detectAndDecode(img)
         if points is not None:
             img=cv2.drawContours(img, [np.int32(points)], 0, (0, 255, 0), 4)
-        # print(f'{len(codeinfo)}:{codeinfo}')
+        #print(f'{len(codeinfo)}:{codeinfo}')
         status = False
         try:
             data = json.loads(codeinfo)
@@ -390,8 +390,11 @@ class Locker:
 
            
 if __name__ == '__main__':
+    
     l = Locker(init_mode="random")
     print(l)
+    l()
+    '''
     l.push({'height':200})
     print(l)
     l.push({'height':40})
@@ -411,4 +414,5 @@ if __name__ == '__main__':
     l.parse_qr(cv2.imread('img/PKG_4.jpg'))
     l.parse_qr(cv2.imread('img/open_all.jpg'))
     print(l)
-    # Locker(init_mode='normal')()
+    '''
+    #Locker(init_mode='random')()
