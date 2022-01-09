@@ -170,7 +170,7 @@
             </div>
     </div>
     <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.5.1/jquery.min.js"></script>`
-    <script src="https://cdn.bootcdn.net/ajax/libs/jquery.qrcode/1.0/jquery.qrcode.min.js"></script>
+    <script src="https://cdn.bootcss.com/jquery.qrcode/1.0/jquery.qrcode.min.js"></script>
     <script>
         function inputHandle(){
             let width  = $('#width')[0].value
@@ -185,7 +185,7 @@
                 console.log(length)
                 $('#qrcode').empty()
                 $('#qrcode').qrcode({
-                    correctLevel : QRCode.CorrectLevel.H,
+                    correctLevel : 1,
                     width:150,
                     height:150,
                     text:JSON.stringify({
